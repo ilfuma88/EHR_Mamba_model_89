@@ -16,6 +16,7 @@ from models.deep_set_attention import DeepSetAttentionModel
 from models.grud import GRUDModel
 from models.ip_nets import InterpolationPredictionModel
 from models.mamba_P12 import CustomMambaModel
+import time
 
 
 def train_test(
@@ -40,6 +41,10 @@ def train_test(
     train_dataloader = DataLoader(train_pair, train_batch_size, shuffle=True, num_workers=16, collate_fn=train_collate_fn, pin_memory=True)
     test_dataloader = DataLoader(test_data, batch_size, shuffle=True, num_workers=16, collate_fn=val_test_collate_fn, pin_memory=True)
     val_dataloader = DataLoader(val_data, batch_size, shuffle=False, num_workers=16, collate_fn=val_test_collate_fn, pin_memory=True)
+
+    # Save model arguments for debugging
+    with open(f"{output_path}/model_args.json", "w") as f:
+        json.dump(model_args, f, indent=4)
 
     # assign GPU
     if torch.cuda.is_available():
@@ -171,10 +176,18 @@ def train(
             num_classes=2,
             static_size=static_size,
             sensor_count=sensor_count,
+            d_model=model_args.get("hidden_size", 86),
+            num_hidden_layers=model_args.get("num_hidden_layers", 4),
+            num_attention_heads=model_args.get("num_attention_heads", 8),
+            dropout=model_args.get("dropout", 0.2),
             **model_args
         )
+    print
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
+    print(f"Model Type: {model_type}")
+    print(f"Model Parameters: {params}")
+    print(f"Hidden Size: {model_args.get('hidden_size', 'N/A')}")
     print(f"# of trainable parameters: {params}")
     criterion = nn.CrossEntropyLoss()  # loss
     optimizer = torch.optim.Adam(
@@ -192,6 +205,8 @@ def train(
         )
 
     for epoch in range(epochs):
+
+        start_time = time.time() #starting time for the epoch
 
         # training step
         model.train().to(device)  # sets training mode
@@ -220,6 +235,7 @@ def train(
             loss.backward()
             optimizer.step()
         accum_loss = np.mean(loss_list)
+
 
         print("Loss is", accum_loss)
 
@@ -261,6 +277,9 @@ def train(
             )
 
         print(f"Epoch: {epoch+1}, Train Loss: {accum_loss}, Val Loss: {val_loss}")
+
+        epoch_duration = time.time() - start_time # elapsed time from the start of the epoch
+        print(f"Time elapsed for epoch {epoch+1}: {epoch_duration:.2f} seconds")
 
         # set early stopping
         if early_stop_criteria == "auroc":
